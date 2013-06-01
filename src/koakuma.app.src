@@ -1,0 +1,12 @@
+{application, koakuma,
+ [
+  {description, ""},
+  {vsn, "0.4a"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { koakuma_app, []}},
+  {env, []}
+ ]}.
