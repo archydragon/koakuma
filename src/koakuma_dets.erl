@@ -7,6 +7,8 @@
 
 -include_lib("koakuma.hrl").
 
+%% API
+
 all() ->
     query(match, '$1').
 
@@ -34,6 +36,8 @@ delete(Object) ->
 replace(OldObj, NewObj) ->
     delete(OldObj),
     insert(NewObj).
+
+%% Internal functions
 
 open() ->
     {ok, db} = dets:open_file(db, [{file, koakuma_cfg:get(data_db)}, {type, bag}]),
