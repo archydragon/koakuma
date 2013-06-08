@@ -39,6 +39,17 @@ init(Args) ->
     spawn_link(fun() -> connect() end),
     {ok, Args}.
 
+handle_call({cfg_read, FileName}, _From, State) ->
+    {ok, ConfigData} = file:consult(FileName),
+    ets:new(config, [set, named_table]),
+    ets:insert(config, ConfigData),
+    {reply, ok, State};
+handle_call({cfg_set, Key, Value}, _From, State) ->
+    ets:insert(config, {Key, Value}),
+    {reply, ok, State};
+handle_call({cfg_key, Key}, _From, State) ->
+    {Key, Value} = cfg_try(Key, ets:lookup(config, Key)),
+    {reply, Value, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -68,6 +79,7 @@ connect() ->
     spawn_link(?MODULE, files_update, [cfg(data_dir)]),
     {ok, S} = gen_tcp:connect(cfg(server), cfg(port), [{packet, line}]),
     cfg_set(sock, S),
+    cfg_set(traffic, 0),
     ok = reply(["NICK ", cfg(nick)]),
     cfg_set(nick_now, cfg(nick)),
     ok = reply(["USER ", cfg(user), " 0 * :", cfg(real_name)]),
@@ -253,7 +265,10 @@ reply_list([])    -> ["I have nothing to share with you, sorry."];
 reply_list(Files) -> reply_list(lists:reverse(Files), []).
 
 reply_list([], Acc)->
-    Acc;
+    % Acc;
+    TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, db_all_sizes())),
+    Transferred = size_h(cfg(traffic)),
+    Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list([[Item] | Left], Acc) ->
     Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
         [
@@ -308,8 +323,7 @@ transfer_init(SS, File) ->
             {ok, Init} = file:read(Fd, ?CHUNKSIZE),
             ok = gen_tcp:send(S, Init),
             receive
-                {tcp, S, Got} ->
-                    io:format("~p~n", [Got]),
+                {tcp, S, _Got} ->
                     transfer(S, Fd, ?CHUNKSIZE, file:read(Fd, ?CHUNKSIZE));
                 _ ->
                     ok
@@ -326,6 +340,8 @@ transfer(S, Fd, Offset, {ok, BinData}) ->
 transfer(S, Fd, _Offset, eof) ->
     timer:sleep(5000),
     io:format("~p", [inet:getstat(S)]),
+    {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
+    cfg_set(traffic, cfg(traffic) + Bytes),
     file:close(Fd),
     gen_tcp:close(S).
 
@@ -358,13 +374,12 @@ find_file(_Q, false) ->
 find_substr(_S, []) ->
     "";
 find_substr(S, [Current | Tail]) ->
-    io:format("~p~n", [Current]),
     case string:str(Current, S) of
         0 -> find_substr(S, Tail);
         _ ->
             [Found] = db_file(Current),
             Pack = Found#file.pack,
-            io_lib:format(" :Do you look for \002~s\002? I have it for you. Type \002/msg ~s xdcc send #~B\002 to obtain it",
+            io_lib:format("Do you look for \002~s\002? I have it for you. Type \002/msg ~s xdcc send #~B\002 to obtain it",
                 [Current, cfg(nick_now), Pack])
     end.
 
@@ -372,7 +387,6 @@ find_substr(S, [Current | Tail]) ->
 %% DETS manipulation functions
 %% -----------------------------------------
 db_all() ->
-    %db_query(dets:match(db, '$1')).
     db_query(match, '$1').
 
 db_all_packs() ->
@@ -380,6 +394,9 @@ db_all_packs() ->
 
 db_all_files() ->
     db_query(select, [{ #file {name='$1', _='_'}, [], ['$1']}]).
+
+db_all_sizes() ->
+    db_query(select, [{ #file {size='$1', _='_'}, [], ['$1']}]).
 
 db_pack(Pack) ->
     db_query(select, [{ #file {pack=Pack, _='_'}, [], ['$_']}]).
@@ -474,18 +491,13 @@ send_raw(Msg) when is_list(Msg) ->
 %% -----------------------------------
 
 cfg_read(FileName) ->
-    {ok, ConfigData} = file:consult(FileName),
-    ets:new(config, [set, named_table]),
-    ets:insert(config, ConfigData),
-    ok.
+    gen_server:call(?MODULE, {cfg_read, FileName}).
 
 cfg_set(Key, Value) ->
-    ets:insert(config, {Key, Value}),
-    ok.
+    gen_server:call(?MODULE, {cfg_set, Key, Value}).
 
 cfg(Key) ->
-    {Key, Value} = cfg_try(Key, ets:lookup(config, Key)),
-    Value.
+    gen_server:call(?MODULE, {cfg_key, Key}).
 
 cfg_try(Key, []) -> {Key, cfg_default(Key)};
 cfg_try(Key, [{Key, Value}]) -> {Key, Value}.
