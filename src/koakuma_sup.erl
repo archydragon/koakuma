@@ -1,6 +1,4 @@
-
 -module(koakuma_sup).
-
 -behaviour(supervisor).
 
 %% API
@@ -24,5 +22,5 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 23, 10}, [?CHILD(koakuma_bot, worker)]} }.
+    {ok, { {one_for_one, 23, 10}, [?CHILD(koakuma_cfg, worker), ?CHILD(koakuma_bot, worker)]} }.
 

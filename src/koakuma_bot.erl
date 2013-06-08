@@ -39,17 +39,6 @@ init(Args) ->
     spawn_link(fun() -> connect() end),
     {ok, Args}.
 
-handle_call({cfg_read, FileName}, _From, State) ->
-    {ok, ConfigData} = file:consult(FileName),
-    ets:new(config, [set, named_table]),
-    ets:insert(config, ConfigData),
-    {reply, ok, State};
-handle_call({cfg_set, Key, Value}, _From, State) ->
-    ets:insert(config, {Key, Value}),
-    {reply, ok, State};
-handle_call({cfg_key, Key}, _From, State) ->
-    {Key, Value} = cfg_try(Key, ets:lookup(config, Key)),
-    {reply, Value, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -75,16 +64,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Entry point of IRC connection
 connect() ->
-    cfg_read("koakuma.cfg"),
-    spawn_link(?MODULE, files_update, [cfg(data_dir)]),
-    {ok, S} = gen_tcp:connect(cfg(server), cfg(port), [{packet, line}]),
-    cfg_set(sock, S),
-    cfg_set(traffic, 0),
-    ok = reply(["NICK ", cfg(nick)]),
-    cfg_set(nick_now, cfg(nick)),
-    ok = reply(["USER ", cfg(user), " 0 * :", cfg(real_name)]),
+    koakuma_cfg:read("koakuma.cfg"),
+    spawn_link(?MODULE, files_update, [koakuma_cfg:get(data_dir)]),
+    {ok, S} = gen_tcp:connect(koakuma_cfg:get(server), koakuma_cfg:get(port), [{packet, line}]),
+    koakuma_cfg:set(sock, S),
+    koakuma_cfg:set(traffic, 0),
+    ok = reply(["NICK ", koakuma_cfg:get(nick)]),
+    koakuma_cfg:set(nick_now, koakuma_cfg:get(nick)),
+    ok = reply(["USER ", koakuma_cfg:get(user), " 0 * :", koakuma_cfg:get(real_name)]),
     listen(S),
-    timer:sleep(cfg(reconnect_interval) * 1000),
+    timer:sleep(koakuma_cfg:get(reconnect_interval) * 1000),
     connect(),
     ok.
 
@@ -122,19 +111,19 @@ run(ping, "PING " ++ From, match) ->
     reply(["PONG ", trim(From)]);
 % Auto join required channels after MOTD end
 run(autojoin, _Message, match) ->
-    [reply(["JOIN ", C]) || C <- cfg(channels)];
+    [reply(["JOIN ", C]) || C <- koakuma_cfg:get(channels)];
 % Identify at NickServ on connect
 run(nickserv, _Message, match) ->
-    identify(cfg(nickserv_password)),
+    identify(koakuma_cfg:get(nickserv_password)),
     ok;
 % Change nick to alternative when main nick is already taken
 run(altnick, _Message, match) ->
-    reply(["NICK ", cfg(altnick)]),
-    cfg_set(nick_now, cfg(altnick));
+    reply(["NICK ", koakuma_cfg:get(altnick)]),
+    koakuma_cfg:set(nick_now, koakuma_cfg:get(altnick));
 % Automatically rejoin after being kicked :)
 run(rejoin, Message, match) ->
     {match, [{B, L}]} = re:run(Message, "#.+\s"),
-    Chan = [" ", string:substr(Message, B, L), " ", cfg(nick_now)],
+    Chan = [" ", string:substr(Message, B, L), " ", koakuma_cfg:get(nick_now)],
     reply(["JOIN", Chan]);
 % Reply to CTCP VERSION request
 run(version, Message, match) ->
@@ -148,7 +137,7 @@ run(version, Message, match) ->
 run(xdcc_find, Message, match) ->
     From = from(Message),
     Query = trim(lists:last(string:tokens(Message, " "))),
-    Reply = find_file(Query, cfg(allow_find)),
+    Reply = find_file(Query, koakuma_cfg:get(allow_find)),
     notice(From, [Reply]);
 % XDCC pack listing to user
 run(xdcc_list, Message, match) ->
@@ -163,7 +152,7 @@ run(xdcc_send, Message, match) ->
     [Pack] = [X || X <- Int, is_binary(X)],
     Reply = io_lib:format("I bring you pack \002#~s\002, use it for great good!", [binary_to_list(Pack)]),
     notice(From, [Reply]),
-    send_file(From, cfg(data_dir), db_pack(list_to_integer(binary_to_list(Pack))));
+    send_file(From, koakuma_cfg:get(data_dir), db_pack(list_to_integer(binary_to_list(Pack))));
 % XDCC pack information
 run(xdcc_info, Message, match) ->
     From = from(Message),
@@ -184,7 +173,7 @@ check(nickserv, Message) ->
 check(altnick, Message) ->
     seek(Message, ":Nickname is already in use");
 check(rejoin, Message) ->
-    seek(Message, ["KICK\s#.*\s", cfg(nick_now)]);
+    seek(Message, ["KICK\s#.*\s", koakuma_cfg:get(nick_now)]);
 check(version, Message) ->
     seek(Message, ":\001VERSION\001");
 check(xdcc_find, Message) ->
@@ -204,8 +193,8 @@ seek(Text, Pattern) ->
 
 reply(Data) ->
     Send = [Data, "\r\n"],
-    io:format("< [~w] ~s~n", [cfg(sock), Data]),
-    gen_tcp:send(cfg(sock), Send).
+    io:format("< [~w] ~s~n", [koakuma_cfg:get(sock), Data]),
+    gen_tcp:send(koakuma_cfg:get(sock), Send).
 
 notice(Target, [M | Left]) ->
     reply(io_lib:format("NOTICE ~s :~s", [Target, M])),
@@ -221,8 +210,8 @@ quit() ->
 identify([]) ->
     ok;
 identify(Password) ->
-    reply(["PRIVMSG NickServ :GHOST ", cfg(nick), " ", Password]),
-    reply(["NICK ", cfg(nick)]),
+    reply(["PRIVMSG NickServ :GHOST ", koakuma_cfg:get(nick), " ", Password]),
+    reply(["NICK ", koakuma_cfg:get(nick)]),
     reply(["PRIVMSG NickServ :IDENTIFY ", Password]).
 
 %% Update XDCC pack list
@@ -230,7 +219,7 @@ files_update(Directory) ->
     Files = db_all(),
     files_remove_old(Directory, Files),
     db_insert(files_add_new(Directory, Files)),
-    timer:sleep(cfg(db_update_interval) * 1000),
+    timer:sleep(koakuma_cfg:get(db_update_interval) * 1000),
     files_update(Directory).
 
 files_remove_old(_Directory, []) ->
@@ -267,7 +256,7 @@ reply_list(Files) -> reply_list(lists:reverse(Files), []).
 reply_list([], Acc)->
     % Acc;
     TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, db_all_sizes())),
-    Transferred = size_h(cfg(traffic)),
+    Transferred = size_h(koakuma_cfg:get(traffic)),
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list([[Item] | Left], Acc) ->
     Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
@@ -299,8 +288,8 @@ fileinfo([], _I, Acc, _Dir) ->
 
 %% Send chosen pack to user
 send_file(Target, Dir, [File]) ->
-    Ip = int_ip(inet_parse:address(cfg(dcc_ip))),
-    {PortMin, PortMax} = cfg(dcc_port_range),
+    Ip = int_ip(inet_parse:address(koakuma_cfg:get(dcc_ip))),
+    {PortMin, PortMax} = koakuma_cfg:get(dcc_port_range),
     SendSocket = port(PortMin, PortMax, [{active, false}, {packet, 4}, {reuseaddr, true}]),
     {ok, Port} = inet:port(SendSocket),
     Reply = io_lib:format("PRIVMSG ~s :\001DCC SEND \"~s\" ~B ~B ~B\001",
@@ -341,7 +330,7 @@ transfer(S, Fd, _Offset, eof) ->
     timer:sleep(5000),
     io:format("~p", [inet:getstat(S)]),
     {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
-    cfg_set(traffic, cfg(traffic) + Bytes),
+    koakuma_cfg:set(traffic, koakuma_cfg:get(traffic) + Bytes),
     file:close(Fd),
     gen_tcp:close(S).
 
@@ -380,7 +369,7 @@ find_substr(S, [Current | Tail]) ->
             [Found] = db_file(Current),
             Pack = Found#file.pack,
             io_lib:format("Do you look for \002~s\002? I have it for you. Type \002/msg ~s xdcc send #~B\002 to obtain it",
-                [Current, cfg(nick_now), Pack])
+                [Current, koakuma_cfg:get(nick_now), Pack])
     end.
 
 %% -----------------------------------------
@@ -415,7 +404,7 @@ db_replace(OldObj, NewObj) ->
     db_insert(NewObj).
 
 db_open() ->
-    {ok, db} = dets:open_file(db, [{file, cfg(data_db)}, {type, bag}]),
+    {ok, db} = dets:open_file(db, [{file, koakuma_cfg:get(data_db)}, {type, bag}]),
     db.
 
 db_close() ->
@@ -485,31 +474,3 @@ send_raw(Msg) when is_binary(Msg) ->
     reply(binary_to_list(Msg));
 send_raw(Msg) when is_list(Msg) ->
     reply(Msg).
-
-%% -----------------------------------
-%% Working with configuration files
-%% -----------------------------------
-
-cfg_read(FileName) ->
-    gen_server:call(?MODULE, {cfg_read, FileName}).
-
-cfg_set(Key, Value) ->
-    gen_server:call(?MODULE, {cfg_set, Key, Value}).
-
-cfg(Key) ->
-    gen_server:call(?MODULE, {cfg_key, Key}).
-
-cfg_try(Key, []) -> {Key, cfg_default(Key)};
-cfg_try(Key, [{Key, Value}]) -> {Key, Value}.
-
-%% Default values for some parameters
-%% Details about them can be found in README and configuration file
-cfg_default(port)               -> 6667;
-cfg_default(user)               -> "ekoakuma";
-cfg_default(real_name)          -> "Koakuma XDCC";
-cfg_default(data_db)            -> "koakuma.db";
-cfg_default(db_update_interval) -> 300;
-cfg_default(dcc_port_range)     -> {50000, 51000};
-cfg_default(allow_find)         -> false;
-cfg_default(reconnect_interval) -> 120;
-cfg_default(_Key)               -> [].
