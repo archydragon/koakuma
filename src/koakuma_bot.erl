@@ -14,7 +14,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, transfer_init/2, files_update/1]).
+-export([start_link/0, transfer_init/2, files_update/1, notice/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -64,6 +64,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Entry point of IRC connection
 connect() ->
     koakuma_cfg:read("koakuma.cfg"),
+    list_links = ets:new(list_links, [set, named_table]),
     spawn_link(?MODULE, files_update, [koakuma_cfg:get(data_dir)]),
     {ok, S} = gen_tcp:connect(koakuma_cfg:get(server), koakuma_cfg:get(port), [{packet, line}]),
     koakuma_cfg:set(sock, S),
@@ -99,6 +100,7 @@ parse(Message) ->
         rejoin,
         xdcc_find,
         xdcc_list,
+        xdcc_stop,
         xdcc_send,
         xdcc_info
     ],
@@ -143,7 +145,14 @@ run(xdcc_list, Message, match) ->
     From = from(Message),
     Files = sort(pack, koakuma_dets:all()),
     List = reply_list(Files),
-    notice(From, List);
+    ets:delete(list_links, From),
+    Link = spawn_link(?MODULE, notice, [From, List]),
+    ets:insert(list_links, {From, Link});
+% Stop list sending
+run(xdcc_stop, Message, match) ->
+    From = from(Message),
+    [{From, Pid}] = ets:lookup(list_links, From),
+    Pid ! stop;
 % XDCC pack sending to user
 run(xdcc_send, Message, match) ->
     From = from(Message),
@@ -179,6 +188,8 @@ check(xdcc_find, Message) ->
     seek(Message, "\s:[@!]find\s");
 check(xdcc_list, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ll][Ii][Ss][Tt]");
+check(xdcc_stop, Message) ->
+    seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ss][Tt][Oo][Pp]");
 check(xdcc_send, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s([Ss][Ee][Nn][Dd])|([Gg][Ee][Tt])\s");
 check(xdcc_info, Message) ->
@@ -197,8 +208,9 @@ reply(Data) ->
 
 notice(Target, [M | Left]) ->
     reply(io_lib:format("NOTICE ~s :~s", [Target, M])),
-    timer:sleep(1000),
-    notice(Target, Left);
+    receive stop -> ok
+    after 1000   -> notice(Target, Left)
+    end;
 notice(_Target, []) ->
     ok.
 
@@ -256,6 +268,9 @@ reply_list([], Acc)->
     % Acc;
     TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, koakuma_dets:sizes())),
     Transferred = size_h(koakuma_cfg:get(traffic)),
+    [io_lib:format("\002*\002 To stop this listing, type \002/msg ~s xdcc stop\002", [koakuma_cfg:get(nick_now)])] ++
+    [io_lib:format("\002*\002 To request a file, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
+    [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list([[Item] | Left], Acc) ->
     Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
