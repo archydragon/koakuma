@@ -8,8 +8,7 @@
 -define(CHUNKSIZE, 16384).
 
 -include_lib("kernel/include/file.hrl").
-
--record(file, {pack, name, size, size_h, modified, gets, md5, crc32}).
+-include_lib("koakuma.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -142,7 +141,7 @@ run(xdcc_find, Message, match) ->
 % XDCC pack listing to user
 run(xdcc_list, Message, match) ->
     From = from(Message),
-    Files = sort(pack, db_all()),
+    Files = sort(pack, koakuma_dets:all()),
     List = reply_list(Files),
     notice(From, List);
 % XDCC pack sending to user
@@ -152,13 +151,13 @@ run(xdcc_send, Message, match) ->
     [Pack] = [X || X <- Int, is_binary(X)],
     Reply = io_lib:format("I bring you pack \002#~s\002, use it for great good!", [binary_to_list(Pack)]),
     notice(From, [Reply]),
-    send_file(From, koakuma_cfg:get(data_dir), db_pack(list_to_integer(binary_to_list(Pack))));
+    send_file(From, koakuma_cfg:get(data_dir), koakuma_dets:pack(list_to_integer(binary_to_list(Pack))));
 % XDCC pack information
 run(xdcc_info, Message, match) ->
     From = from(Message),
     Int = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global]),
     [Pack] = [X || X <- Int, is_binary(X)],
-    send_info(From, db_pack(list_to_integer(binary_to_list(Pack))));
+    send_info(From, koakuma_dets:pack(list_to_integer(binary_to_list(Pack))));
 % Catch-all
 run(_Action, _Message, _Nomatch) ->
     ok.
@@ -216,9 +215,9 @@ identify(Password) ->
 
 %% Update XDCC pack list
 files_update(Directory) ->
-    Files = db_all(),
+    Files = koakuma_dets:all(),
     files_remove_old(Directory, Files),
-    db_insert(files_add_new(Directory, Files)),
+    koakuma_dets:insert(files_add_new(Directory, Files)),
     timer:sleep(koakuma_cfg:get(db_update_interval) * 1000),
     files_update(Directory).
 
@@ -229,7 +228,7 @@ files_remove_old(Directory, [[F] | Other]) ->
     Mtime = F#file.modified,
     case files_check(file:read_file_info([Directory, $/, Name]), Mtime) of
         ok -> ok;
-        _  -> db_delete(F)
+        _  -> koakuma_dets:delete(F)
     end,
     files_remove_old(Directory, Other).
 
@@ -244,9 +243,9 @@ files_add_new(Directory, []) ->
     {ok, Files} = file:list_dir(Directory),
     fileinfo(Files, 1, [], Directory);
 files_add_new(Directory, _Files) ->
-    FilesOld = db_all_files(),
+    FilesOld = koakuma_dets:files(),
     {ok, FilesAll} = file:list_dir(Directory),
-    LastPack = list_max(db_all_packs()),
+    LastPack = list_max(koakuma_dets:packs()),
     fileinfo(FilesAll -- FilesOld, LastPack + 1, [], Directory).
 
 %% Generate packs list for reply
@@ -255,7 +254,7 @@ reply_list(Files) -> reply_list(lists:reverse(Files), []).
 
 reply_list([], Acc)->
     % Acc;
-    TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, db_all_sizes())),
+    TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, koakuma_dets:sizes())),
     Transferred = size_h(koakuma_cfg:get(traffic)),
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list([[Item] | Left], Acc) ->
@@ -297,7 +296,7 @@ send_file(Target, Dir, [File]) ->
     reply(Reply),
     spawn_link(?MODULE, transfer_init, [SendSocket, [Dir, $/, File#file.name]]),
     GetUp = File#file{gets=File#file.gets + 1},
-    db_replace(File, GetUp);
+    koakuma_dets:replace(File, GetUp);
 send_file(Target, _Dir, []) ->
     % If user requested wrong pack
     notice(Target, ["Pack not found, sorry."]).
@@ -355,7 +354,7 @@ send_info(Target, []) ->
 %% Find file among the ones we have
 find_file(Query, true) ->
     io:format("~p~n", [Query]),
-    Names = db_all_files(),
+    Names = koakuma_dets:files(),
     find_substr(Query, Names);
 find_file(_Q, false) ->
     "".
@@ -366,55 +365,11 @@ find_substr(S, [Current | Tail]) ->
     case string:str(Current, S) of
         0 -> find_substr(S, Tail);
         _ ->
-            [Found] = db_file(Current),
+            [Found] = koakuma_dets:file(Current),
             Pack = Found#file.pack,
             io_lib:format("Do you look for \002~s\002? I have it for you. Type \002/msg ~s xdcc send #~B\002 to obtain it",
                 [Current, koakuma_cfg:get(nick_now), Pack])
     end.
-
-%% -----------------------------------------
-%% DETS manipulation functions
-%% -----------------------------------------
-db_all() ->
-    db_query(match, '$1').
-
-db_all_packs() ->
-    db_query(select, [{ #file {pack='$1', _='_'}, [], ['$1']}]).
-
-db_all_files() ->
-    db_query(select, [{ #file {name='$1', _='_'}, [], ['$1']}]).
-
-db_all_sizes() ->
-    db_query(select, [{ #file {size='$1', _='_'}, [], ['$1']}]).
-
-db_pack(Pack) ->
-    db_query(select, [{ #file {pack=Pack, _='_'}, [], ['$_']}]).
-
-db_file(Name) ->
-    db_query(select, [{ #file {name=Name, _='_'}, [], ['$_']}]).
-
-db_insert(Object) ->
-    db_query(insert, Object).
-
-db_delete(Object) ->
-    db_query(delete_object, Object).
-
-db_replace(OldObj, NewObj) ->
-    db_delete(OldObj),
-    db_insert(NewObj).
-
-db_open() ->
-    {ok, db} = dets:open_file(db, [{file, koakuma_cfg:get(data_db)}, {type, bag}]),
-    db.
-
-db_close() ->
-    dets:close(db).
-
-db_query(F, Param) ->
-    db_open(),
-    Result = erlang:apply(dets, F, [db, Param]),
-    db_close(),
-    Result.
 
 %% -------------------------------
 %% "Helper" functions
