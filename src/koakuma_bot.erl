@@ -14,7 +14,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, transfer_init/3, files_update/1, notice/2, send_file/3]).
+-export([start_link/0, files_update/1, notice/2, send_file/3, send_files_list/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -103,6 +103,7 @@ parse(Message) ->
         xdcc_list,
         xdcc_stop,
         xdcc_send,
+        xdcc_batch,
         xdcc_info
     ],
     [run(A, Message, check(A, Message)) || A <- Actions].
@@ -157,16 +158,17 @@ run(xdcc_stop, Message, match) ->
 % XDCC pack sending to user
 run(xdcc_send, Message, match) ->
     From = from(Message),
-    Int = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global]),
-    [Pack] = [X || X <- Int, is_binary(X)],
-    Reply = io_lib:format("I bring you pack \002#~s\002, use it for great good!", [binary_to_list(Pack)]),
-    notice(From, [Reply]),
-    send_file(From, koakuma_cfg:get(data_dir), koakuma_dets:pack(list_to_integer(binary_to_list(Pack))));
+    Pack = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global, {return, list}]),
+    spawn_link(?MODULE, send_file, [From, koakuma_cfg:get(data_dir), koakuma_dets:pack(list_to_integer(Pack))]);
+% Send multiple packs to user
+run(xdcc_batch, Message, match) ->
+    From = from(Message),
+    Packs = ranges(lists:last(string:tokens(Message, " "))),
+    spawn_link(?MODULE, send_files_list, [From, koakuma_cfg:get(data_dir), Packs]);
 % XDCC pack information
 run(xdcc_info, Message, match) ->
     From = from(Message),
-    Int = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global]),
-    [Pack] = [X || X <- Int, is_binary(X)],
+    Pack = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global, {return, list}]),
     send_info(From, koakuma_dets:pack(list_to_integer(binary_to_list(Pack))));
 % Catch-all
 run(_Action, _Message, _Nomatch) ->
@@ -193,6 +195,8 @@ check(xdcc_stop, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ss][Tt][Oo][Pp]");
 check(xdcc_send, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s([Ss][Ee][Nn][Dd])|([Gg][Ee][Tt])\s");
+check(xdcc_batch, Message) ->
+    seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Bb][Aa][Tt][Cc][Hh]\s");
 check(xdcc_info, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ii][Nn][Ff][Oo]\s").
 
@@ -290,7 +294,7 @@ reply_list(Files, true)      -> reply_list_fun(lists:reverse(Files), []).
 
 reply_list_fun([], Acc)->
     % Acc;
-    TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, koakuma_dets:sizes())),
+    TotalSize = size_h(lists:sum(koakuma_dets:sizes())),
     Transferred = size_h(koakuma_cfg:get(traffic)),
     {state, {SlotsTotal, Queue}} = koakuma_queue:state(),
     Free = SlotsTotal - length(Queue),
@@ -298,6 +302,7 @@ reply_list_fun([], Acc)->
     [io_lib:format("\002*\002 To stop this listing, type \002/msg ~s xdcc stop\002", [koakuma_cfg:get(nick_now)])] ++
     [io_lib:format("\002*\002 ~B of ~B download slots available.", [SlotsFree, SlotsTotal])] ++
     [io_lib:format("\002*\002 To request a file, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
+    [io_lib:format("\002*\002 To request multiple files, type \002/msg ~s xdcc batch 1,4-6\002", [koakuma_cfg:get(nick_now)])] ++
     [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc info X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list_fun([[Item] | Left], Acc) ->
@@ -318,12 +323,21 @@ list_export(File) ->
 
 %% Send chosen pack to user
 send_file(Target, Dir, [File]) ->
-    spawn_link(?MODULE, transfer_init, [Target, Dir, [File]]),
+    Reply = io_lib:format("I bring you pack \002#~B\002, use it for great good!", [File#file.pack]),
+    notice(Target, [Reply]),
+    transfer_init(Target, Dir, [File]),
     GetUp = File#file{gets=File#file.gets + 1},
     koakuma_dets:replace(File, GetUp);
 send_file(Target, _Dir, []) ->
     % If user requested wrong pack
     notice(Target, ["Pack not found, sorry."]).
+
+%% Send multiple packs
+send_files_list(Target, Dir, [Item | OtherPacks]) ->
+    send_file(Target, Dir, koakuma_dets:pack(Item)),
+    send_files_list(Target, Dir, OtherPacks);
+send_files_list(_Target, _Dir, []) ->
+    ok.
 
 %% Init DCC data transfer
 transfer_init(Target, Dir, [File]) ->
@@ -447,7 +461,7 @@ port(_Min, _Max, Current, _TcpOpts, {ok, Socket}) ->
 
 %% Remove line feed characters from message
 trim(Message) ->
-    re:replace(Message, "(^\\s+)|(\\s+$)", "", [global,{return,list}]).
+    re:replace(Message, "(^\\s+)|(\\s+$)", "", [global, {return,list}]).
 
 %% Sort list of recors
 sort(pack, Lor) ->
@@ -468,6 +482,17 @@ list_max(X, [_ | Tail])                  -> list_max(X, Tail).
 %% Remove all ^B from text
 unbold(Str) ->
     string:join(string:tokens(Str, "\002"), "").
+
+%% Get numbers from ranges like "1,2-4"
+ranges(Data) ->
+    Filtered = re:replace(Data, "[^0-9\-\,]", "", [global, {return, list}]),
+    lists:flatten([
+        case string:tokens(P, "-") of
+            [P]        -> list_to_integer(P);
+            [Min, Max] -> lists:seq(list_to_integer(Min), list_to_integer(Max))
+        end
+        || P <- string:tokens(Filtered, ",")
+    ]).
 
 %% -------------------------------------
 %% API implementations
