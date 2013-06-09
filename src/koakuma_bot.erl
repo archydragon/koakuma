@@ -277,7 +277,7 @@ fileinfo([CurrentFile | Others], I, Acc, Dir) ->
         md5 = checksum:md5(File),
         crc32 = checksum:crc32(File)
     },
-    [reply(io_lib:format("PRIVMSG ~s :New pack #~B: \002~s\002 [~s] (type \002/msg ~s xdcc get #~B\002 to request)",
+    [reply(io_lib:format("PRIVMSG ~s :New pack #~B: \002~s\002 [~s] (type \002/msg ~s xdcc send #~B\002 to request)",
         [C, I, CurrentFile, HSize, koakuma_cfg:get(nick_now), I])) || C <- koakuma_cfg:get(channels_announce)],
     fileinfo(Others, I+1, [Item | Acc], Dir);
 fileinfo([], _I, Acc, _Dir) ->
@@ -298,7 +298,7 @@ reply_list_fun([], Acc)->
     [io_lib:format("\002*\002 To stop this listing, type \002/msg ~s xdcc stop\002", [koakuma_cfg:get(nick_now)])] ++
     [io_lib:format("\002*\002 ~B of ~B download slots available.", [SlotsFree, SlotsTotal])] ++
     [io_lib:format("\002*\002 To request a file, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
-    [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
+    [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc info X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list_fun([[Item] | Left], Acc) ->
     Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
