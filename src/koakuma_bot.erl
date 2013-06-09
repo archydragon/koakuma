@@ -145,7 +145,7 @@ run(xdcc_find, Message, match) ->
 run(xdcc_list, Message, match) ->
     From = from(Message),
     Files = sort(pack, koakuma_dets:all()),
-    List = reply_list(Files),
+    List = reply_list(Files, koakuma_cfg:get(allow_list)),
     ets:delete(list_links, From),
     Link = spawn_link(?MODULE, notice, [From, List]),
     ets:insert(list_links, {From, Link});
@@ -262,10 +262,11 @@ files_add_new(Directory, _Files) ->
     fileinfo(FilesAll -- FilesOld, LastPack + 1, [], Directory).
 
 %% Generate packs list for reply
-reply_list([])    -> ["I have nothing to share with you, sorry."];
-reply_list(Files) -> reply_list(lists:reverse(Files), []).
+reply_list(_Whatever, false) -> [koakuma_cfg:get(list_forbid_msg)];
+reply_list([], true)         -> ["I have nothing to share with you, sorry."];
+reply_list(Files, true)      -> reply_list_fun(lists:reverse(Files), []).
 
-reply_list([], Acc)->
+reply_list_fun([], Acc)->
     % Acc;
     TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, koakuma_dets:sizes())),
     Transferred = size_h(koakuma_cfg:get(traffic)),
@@ -277,7 +278,7 @@ reply_list([], Acc)->
     [io_lib:format("\002*\002 To request a file, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
     [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
-reply_list([[Item] | Left], Acc) ->
+reply_list_fun([[Item] | Left], Acc) ->
     Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
         [
             [$#, integer_to_list(Item#file.pack)],
@@ -285,7 +286,7 @@ reply_list([[Item] | Left], Acc) ->
             [$[, Item#file.size_h, $]],
             Item#file.name
         ]),
-    reply_list(Left, [Formatted | Acc]).
+    reply_list_fun(Left, [Formatted | Acc]).
 
 %% Get detailed information about files in list
 fileinfo([CurrentFile | Others], I, Acc, Dir) ->
