@@ -86,5 +86,7 @@ cfg_default(dcc_concurrent_sends) -> 10;
 cfg_default(allow_find)           -> false;
 cfg_default(allow_list)           -> true;
 cfg_default(list_forbid_msg)      -> "XDCC LIST not allowed.";
+cfg_default(list_export)          -> "/tmp/xdcc.txt";
+cfg_default(list_export_cmd)      -> "";
 cfg_default(reconnect_interval)   -> 120;
 cfg_default(_Key)                 -> [].

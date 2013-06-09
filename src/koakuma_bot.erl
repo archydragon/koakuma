@@ -64,14 +64,14 @@ code_change(_OldVsn, State, _Extra) ->
 %% Entry point of IRC connection
 connect() ->
     koakuma_cfg:read("koakuma.cfg"),
+    koakuma_cfg:set(traffic, 0),
+    koakuma_cfg:set(nick_now, koakuma_cfg:get(nick)),
     list_links = ets:new(list_links, [set, named_table]),
     spawn_link(?MODULE, files_update, [koakuma_cfg:get(data_dir)]),
     {ok, S} = gen_tcp:connect(koakuma_cfg:get(server), koakuma_cfg:get(port), [{packet, line}]),
     koakuma_cfg:set(sock, S),
-    koakuma_cfg:set(traffic, 0),
     koakuma_queue:set_limit(koakuma_cfg:get(dcc_concurrent_sends)),
     ok = reply(["NICK ", koakuma_cfg:get(nick)]),
-    koakuma_cfg:set(nick_now, koakuma_cfg:get(nick)),
     ok = reply(["USER ", koakuma_cfg:get(user), " 0 * :", koakuma_cfg:get(real_name)]),
     listen(S),
     timer:sleep(koakuma_cfg:get(reconnect_interval) * 1000),
@@ -231,6 +231,7 @@ files_update(Directory) ->
     Files = koakuma_dets:all(),
     files_remove_old(Directory, Files),
     koakuma_dets:insert(files_add_new(Directory, Files)),
+    list_export(koakuma_cfg:get(list_export)),
     timer:sleep(koakuma_cfg:get(db_update_interval) * 1000),
     files_update(Directory).
 
@@ -305,6 +306,12 @@ fileinfo([CurrentFile | Others], I, Acc, Dir) ->
     fileinfo(Others, I+1, [Item | Acc], Dir);
 fileinfo([], _I, Acc, _Dir) ->
     Acc.
+
+%% Export XDCC list to text file
+list_export(File) ->
+    List = reply_list(sort(pack, koakuma_dets:all()), true),
+    file:write_file(File, unbold(string:join(List, "\n"))),
+    os:cmd(koakuma_cfg:get(list_export_cmd)).
 
 %% Send chosen pack to user
 send_file(Target, Dir, [File]) ->
@@ -454,6 +461,10 @@ list_max([Head | Tail]) -> list_max(Head, Tail).
 list_max(X, [])                          -> X;
 list_max(X, [Head | Tail]) when X < Head -> list_max(Head, Tail);
 list_max(X, [_ | Tail])                  -> list_max(X, Tail).
+
+%% Remove all ^B from text
+unbold(Str) ->
+    string:join(string:tokens(Str, "\002"), "").
 
 %% -------------------------------------
 %% API implementations
