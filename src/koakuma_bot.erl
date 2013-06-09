@@ -14,7 +14,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, transfer_init/2, files_update/1, notice/2]).
+-export([start_link/0, transfer_init/3, files_update/1, notice/2, send_file/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -69,6 +69,7 @@ connect() ->
     {ok, S} = gen_tcp:connect(koakuma_cfg:get(server), koakuma_cfg:get(port), [{packet, line}]),
     koakuma_cfg:set(sock, S),
     koakuma_cfg:set(traffic, 0),
+    koakuma_queue:set_limit(koakuma_cfg:get(dcc_concurrent_sends)),
     ok = reply(["NICK ", koakuma_cfg:get(nick)]),
     koakuma_cfg:set(nick_now, koakuma_cfg:get(nick)),
     ok = reply(["USER ", koakuma_cfg:get(user), " 0 * :", koakuma_cfg:get(real_name)]),
@@ -268,7 +269,11 @@ reply_list([], Acc)->
     % Acc;
     TotalSize = size_h(lists:foldl(fun(X, Sum) -> X + Sum end, 0, koakuma_dets:sizes())),
     Transferred = size_h(koakuma_cfg:get(traffic)),
+    {state, {SlotsTotal, Queue}} = koakuma_queue:state(),
+    Free = SlotsTotal - length(Queue),
+    SlotsFree = case Free > 0 of true -> Free; false -> 0 end,
     [io_lib:format("\002*\002 To stop this listing, type \002/msg ~s xdcc stop\002", [koakuma_cfg:get(nick_now)])] ++
+    [io_lib:format("\002*\002 ~B of ~B download slots available.", [SlotsFree, SlotsTotal])] ++
     [io_lib:format("\002*\002 To request a file, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
     [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc send X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
@@ -302,14 +307,7 @@ fileinfo([], _I, Acc, _Dir) ->
 
 %% Send chosen pack to user
 send_file(Target, Dir, [File]) ->
-    Ip = int_ip(inet_parse:address(koakuma_cfg:get(dcc_ip))),
-    {PortMin, PortMax} = koakuma_cfg:get(dcc_port_range),
-    SendSocket = port(PortMin, PortMax, [{active, false}, {packet, 4}, {reuseaddr, true}]),
-    {ok, Port} = inet:port(SendSocket),
-    Reply = io_lib:format("PRIVMSG ~s :\001DCC SEND \"~s\" ~B ~B ~B\001",
-        [Target, File#file.name, Ip, Port, File#file.size]),
-    reply(Reply),
-    spawn_link(?MODULE, transfer_init, [SendSocket, [Dir, $/, File#file.name]]),
+    spawn_link(?MODULE, transfer_init, [Target, Dir, [File]]),
     GetUp = File#file{gets=File#file.gets + 1},
     koakuma_dets:replace(File, GetUp);
 send_file(Target, _Dir, []) ->
@@ -317,12 +315,31 @@ send_file(Target, _Dir, []) ->
     notice(Target, ["Pack not found, sorry."]).
 
 %% Init DCC data transfer
-transfer_init(SS, File) ->
+transfer_init(Target, Dir, [File]) ->
+    koakuma_queue:push(self()),
+    {state, {Slots, Queue}} = koakuma_queue:state(),
+    % If there are no free slots, put request to queue
+    case length(Queue) =< Slots of
+        false ->
+            QueuedReply = io_lib:format("Unfortunately, there are no free download slots right now." ++
+                "You were put to download queue to ~B position. The transfer will start automatically.",
+                [length(Queue) - Slots]),
+            notice(Target, QueuedReply),
+            receive start -> ok end;
+        true -> ok
+    end,
+    Ip = int_ip(inet_parse:address(koakuma_cfg:get(dcc_ip))),
+    {PortMin, PortMax} = koakuma_cfg:get(dcc_port_range),
+    {Port, SS} = port(PortMin, PortMax, [{active, false}, {packet, 4}, {reuseaddr, true}]),
+    Reply = io_lib:format("PRIVMSG ~s :\001DCC SEND \"~s\" ~B ~B ~B\001",
+        [Target, File#file.name, Ip, Port, File#file.size]),
+    reply(Reply),
+    F = [Dir, $/, File#file.name],
     case gen_tcp:accept(SS) of
         {ok, S} ->
             ok = gen_tcp:close(SS),
             inet:setopts(S,[{active, once}, {packet, raw}, binary]),
-            {ok, Fd} = file:open(File, [read, raw, binary]),
+            {ok, Fd} = file:open(F, [read, raw, binary]),
             {ok, Init} = file:read(Fd, ?CHUNKSIZE),
             ok = gen_tcp:send(S, Init),
             receive
@@ -345,6 +362,7 @@ transfer(S, Fd, _Offset, eof) ->
     io:format("~p", [inet:getstat(S)]),
     {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
     koakuma_cfg:set(traffic, koakuma_cfg:get(traffic) + Bytes),
+    koakuma_queue:done(self()),
     file:close(Fd),
     gen_tcp:close(S).
 
@@ -408,13 +426,13 @@ int_ip(Ip) when is_tuple(Ip) ->
     (O1*16777216)+(O2*65536)+(O3*256)+(O4).
 
 %% Bind random free port from configured range
-port(Min, Max, TcpOpts) -> port(Min, Max, TcpOpts, {error, fake}).
+port(Min, Max, TcpOpts) -> port(Min, Max, Min, TcpOpts, {error, fake}).
 
-port(Min, Max, TcpOpts, {error, _}) ->
+port(Min, Max, _Current, TcpOpts, {error, _}) ->
     TryPort = random:uniform(Max-Min) + Min,
-    port(Min, Max, TcpOpts, gen_tcp:listen(TryPort, TcpOpts));
-port(_Min, _Max, _TcpOpts, {ok, Socket}) ->
-    Socket.
+    port(Min, Max, TryPort, TcpOpts, gen_tcp:listen(TryPort, TcpOpts));
+port(_Min, _Max, Current, _TcpOpts, {ok, Socket}) ->
+    {Current, Socket}.
 
 %% Remove line feed characters from message
 trim(Message) ->

@@ -22,5 +22,9 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 23, 10}, [?CHILD(koakuma_cfg, worker), ?CHILD(koakuma_bot, worker)]} }.
+    {ok, { {one_for_one, 23, 10}, [
+        ?CHILD(koakuma_cfg, worker),
+        ?CHILD(koakuma_queue, worker),
+        ?CHILD(koakuma_bot, worker)
+    ]} }.
 

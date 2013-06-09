@@ -76,12 +76,13 @@ try_get(Key, [{Key, Value}]) -> {Key, Value}.
 
 %% Default values for some parameters
 %% Details about them can be found in README and configuration file
-cfg_default(port)               -> 6667;
-cfg_default(user)               -> "ekoakuma";
-cfg_default(real_name)          -> "Koakuma XDCC";
-cfg_default(data_db)            -> "koakuma.db";
-cfg_default(db_update_interval) -> 300;
-cfg_default(dcc_port_range)     -> {50000, 51000};
-cfg_default(allow_find)         -> false;
-cfg_default(reconnect_interval) -> 120;
-cfg_default(_Key)               -> [].
+cfg_default(port)                 -> 6667;
+cfg_default(user)                 -> "ekoakuma";
+cfg_default(real_name)            -> "Koakuma XDCC";
+cfg_default(data_db)              -> "koakuma.db";
+cfg_default(db_update_interval)   -> 300;
+cfg_default(dcc_port_range)       -> {50000, 51000};
+cfg_default(dcc_concurrent_sends) -> 10;
+cfg_default(allow_find)           -> false;
+cfg_default(reconnect_interval)   -> 120;
+cfg_default(_Key)                 -> [].
