@@ -14,7 +14,13 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, files_update/1, notice/2, send_file/3, send_files_list/3]).
+-export([start_link/0]).
+
+%% ------------------------------------------------------------------
+%% Spawnable unction Exports
+%% ------------------------------------------------------------------
+
+-export([files_update/1, notice/2, send_file/3, send_files_list/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
