@@ -262,6 +262,27 @@ files_add_new(Directory, _Files) ->
     LastPack = list_max(koakuma_dets:packs()),
     fileinfo(FilesAll -- FilesOld, LastPack + 1, [], Directory).
 
+%% Get detailed information about files in list
+fileinfo([CurrentFile | Others], I, Acc, Dir) ->
+    File = [Dir, $/, CurrentFile],
+    {ok, Info} = file:read_file_info(File),
+    HSize = size_h(Info#file_info.size),
+    Item = #file{
+        pack = I,
+        name = CurrentFile,
+        size = Info#file_info.size,
+        size_h = HSize,
+        modified = Info#file_info.mtime,
+        gets = 0,
+        md5 = checksum:md5(File),
+        crc32 = checksum:crc32(File)
+    },
+    [reply(io_lib:format("PRIVMSG ~s :New pack #~B: \002~s\002 [~s] (type \002/msg ~s xdcc get #~B\002 to request)",
+        [C, I, CurrentFile, HSize, koakuma_cfg:get(nick_now), I])) || C <- koakuma_cfg:get(channels_announce)],
+    fileinfo(Others, I+1, [Item | Acc], Dir);
+fileinfo([], _I, Acc, _Dir) ->
+    Acc.
+
 %% Generate packs list for reply
 reply_list(_Whatever, false) -> [koakuma_cfg:get(list_forbid_msg)];
 reply_list([], true)         -> ["I have nothing to share with you, sorry."];
@@ -288,24 +309,6 @@ reply_list_fun([[Item] | Left], Acc) ->
             Item#file.name
         ]),
     reply_list_fun(Left, [Formatted | Acc]).
-
-%% Get detailed information about files in list
-fileinfo([CurrentFile | Others], I, Acc, Dir) ->
-    File = [Dir, $/, CurrentFile],
-    {ok, Info} = file:read_file_info(File),
-    Item = #file{
-        pack = I,
-        name = CurrentFile,
-        size = Info#file_info.size,
-        size_h = size_h(Info#file_info.size),
-        modified = Info#file_info.mtime,
-        gets = 0,
-        md5 = checksum:md5(File),
-        crc32 = checksum:crc32(File)
-    },
-    fileinfo(Others, I+1, [Item | Acc], Dir);
-fileinfo([], _I, Acc, _Dir) ->
-    Acc.
 
 %% Export XDCC list to text file
 list_export(File) ->
