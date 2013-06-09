@@ -4,7 +4,7 @@
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
--define(VERSION, "0.6a").
+-define(VERSION, "0.7a").
 -define(CHUNKSIZE, 16384).
 
 -include_lib("kernel/include/file.hrl").
