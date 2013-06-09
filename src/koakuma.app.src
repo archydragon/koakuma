@@ -1,7 +1,7 @@
 {application, koakuma,
  [
   {description, ""},
-  {vsn, "0.5a"},
+  {vsn, "0.6a"},
   {registered, []},
   {applications, [
                   kernel,
