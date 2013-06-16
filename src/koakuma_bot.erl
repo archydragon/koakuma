@@ -440,25 +440,31 @@ find_substr(S, [Current | Tail]) ->
 %% -------------------------------
 
 %% FROM split
+-spec from(string()) -> string().
 from([$: | Text]) ->
     [From | _Tail] = string:tokens(Text, "!"),
     From.
 
 %% Human readable sizes
+-spec size_h(number()) -> string().
 size_h(Size) when Size < 1024 -> integer_to_list(Size);
 size_h(Size)                  -> size_h(Size, ["", "K", "M", "G", "T", "P"]).
 
+-spec size_h(number(), list()) -> string().
 size_h(S, [_|[_|_] = L]) when S >= 1024 -> size_h(S/1024, L);
 size_h(S, [M|_])                        -> lists:merge(io_lib:format("~.2f~s", [float(S), M])).
 
 %% Convert IP tuple to integer value
+-spec int_ip({'ok',{number(),number(),number(),number()}}) -> number().
 int_ip(Ip) when is_tuple(Ip) ->
     {ok, {O1, O2, O3, O4}} = Ip,
     (O1*16777216)+(O2*65536)+(O3*256)+(O4).
 
 %% Bind random free port from configured range
+-spec port(number(), number(), [gen_tcp:option()]) -> {inet:port_number(), inet:socket()}.
 port(Min, Max, TcpOpts) -> port(Min, Max, Min, TcpOpts, {error, fake}).
 
+-spec port(number(), number(), number(), [gen_tcp:option()], term()) -> {inet:port_number(), inet:socket()}.
 port(Min, Max, _Current, TcpOpts, {error, _}) ->
     TryPort = random:uniform(Max-Min) + Min,
     port(Min, Max, TryPort, TcpOpts, gen_tcp:listen(TryPort, TcpOpts));
@@ -466,10 +472,12 @@ port(_Min, _Max, Current, _TcpOpts, {ok, Socket}) ->
     {Current, Socket}.
 
 %% Remove line feed characters from message
+-spec trim(string()) -> string().
 trim(Message) ->
     re:replace(Message, "(^\\s+)|(\\s+$)", "", [global, {return,list}]).
 
 %% Sort list of recors
+-spec sort(term(), list()) -> list().
 sort(pack, Lor) ->
     SF = fun([I1], [I2]) -> I1#file.pack < I2#file.pack end,
     lists:sort(SF, Lor);
@@ -478,18 +486,22 @@ sort(name, Lor) ->
     lists:sort(SF, Lor).
 
 %% Get max value in list
+-spec list_max(list()) -> 0 | number().
 list_max([])            -> 0;
 list_max([Head | Tail]) -> list_max(Head, Tail).
 
+-spec list_max(number(), list()) -> number().
 list_max(X, [])                          -> X;
 list_max(X, [Head | Tail]) when X < Head -> list_max(Head, Tail);
 list_max(X, [_ | Tail])                  -> list_max(X, Tail).
 
 %% Remove all ^B from text
+-spec unbold(string()) -> string().
 unbold(Str) ->
     string:join(string:tokens(Str, "\002"), "").
 
 %% Get numbers from ranges like "1,2-4"
+-spec ranges(nonempty_string()) -> list().
 ranges(Data) ->
     Filtered = re:replace(Data, "[^0-9\-\,]", "", [global, {return, list}]),
     lists:flatten([
