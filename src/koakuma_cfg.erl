@@ -42,16 +42,23 @@ init(Args) ->
     {ok, Args}.
 
 handle_call({cfg_read, FileName}, _From, State) ->
-    {ok, ConfigData} = file:consult(FileName),
-    ets:new(config, [set, named_table]),
-    ets:insert(config, ConfigData),
-    {reply, ok, State};
+    % {ok, ConfigData} = file:consult(FileName),
+    case file:consult(FileName) of
+        {ok, ConfigData} ->
+            ets:new(config, [set, named_table]),
+            ets:insert(config, ConfigData),
+            {reply, ok, State};
+        Error ->
+            {reply, Error, State}
+    end;
 handle_call({cfg_set, Key, Value}, _From, State) ->
     ets:insert(config, {Key, Value}),
     {reply, ok, State};
 handle_call({cfg_key, Key}, _From, State) ->
     {Key, Value} = try_get(Key, ets:lookup(config, Key)),
     {reply, Value, State};
+handle_call(stop, _From, State) ->
+    {stop, normal, shutdown_ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
