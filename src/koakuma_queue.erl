@@ -60,6 +60,8 @@ handle_call({done, Process}, _From, {L, Queue}) ->
     {reply, ok, {L, NewQueue}};
 handle_call(state, _From, State) ->
     {reply, {state, State}, State};
+handle_call(stop, _From, State) ->
+    {stop, normal, shutdown_ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 

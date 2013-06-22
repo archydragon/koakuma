@@ -2,7 +2,7 @@ ERLC=`which erlc`
 ERL=`which erl`
 EBIN_DIR=ebin
 EUNIT_DIR=eunit
-TESTED_MODULES=koakuma_cfg, koakuma_bot
+TESTED_MODULES=koakuma_cfg, koakuma_bot, koakuma_queue
 .DEFAULT_GOAL := compile
 .PHONY: compile clean test
 
