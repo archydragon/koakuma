@@ -1,3 +1,4 @@
-ebin
+ebin/*.beam
 erl_crash.dump
 *.db
+eunit

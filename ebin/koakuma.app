@@ -1,0 +1,9 @@
+{application,koakuma,
+             [{description,[]},
+              {vsn,"0.7a"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{koakuma_app,[]}},
+              {env,[]},
+              {modules,[checksum,koakuma,koakuma_app,koakuma_bot,koakuma_cfg,
+                        koakuma_dets,koakuma_queue,koakuma_sup]}]}.
