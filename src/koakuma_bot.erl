@@ -457,8 +457,9 @@ size_h(S, [M|_])                        -> lists:merge(io_lib:format("~.2f~s", [
 %% Convert IP tuple to integer value
 -spec int_ip({'ok',{number(),number(),number(),number()}}) -> number().
 int_ip(Ip) when is_tuple(Ip) ->
-    {ok, {O1, O2, O3, O4}} = Ip,
-    (O1*16777216)+(O2*65536)+(O3*256)+(O4).
+    {ok, IpTuple} = Ip,
+    <<IntIp:32>> = list_to_binary(tuple_to_list(IpTuple)),
+    IntIp.
 
 %% Bind random free port from configured range
 -spec port(number(), number(), [gen_tcp:option()]) -> {inet:port_number(), inet:socket()}.
