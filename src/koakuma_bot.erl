@@ -175,7 +175,7 @@ run(xdcc_batch, Message, match) ->
 run(xdcc_info, Message, match) ->
     From = from(Message),
     Pack = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global, {return, list}]),
-    send_info(From, koakuma_dets:pack(list_to_integer(binary_to_list(Pack))));
+    send_info(From, koakuma_dets:pack(list_to_integer(Pack)));
 % Catch-all
 run(_Action, _Message, _Nomatch) ->
     ok.
