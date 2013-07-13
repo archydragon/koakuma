@@ -146,7 +146,10 @@ run(version, Message, match) ->
 run(xdcc_find, Message, match) ->
     From = from(Message),
     Query = trim(lists:last(string:tokens(Message, " "))),
-    Reply = find_file(Query, koakuma_cfg:get(allow_find)),
+    Reply = case length(Query) >= 4 of
+        true  -> find_file(Query, koakuma_cfg:get(allow_find));
+        false -> ""
+    end,
     notice(From, [Reply]);
 % XDCC pack listing to user
 run(xdcc_list, Message, match) ->
