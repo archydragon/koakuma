@@ -389,10 +389,15 @@ transfer_init(Target, Dir, [File]) ->
 
 %% Continue transfer file chunk-by-chunk
 transfer(S, Fd, Offset, {ok, BinData}) ->
-    ok = gen_tcp:send(S, BinData),
-    transfer(S, Fd, Offset+?CHUNKSIZE, file:read(Fd, ?CHUNKSIZE));
+    case gen_tcp:send(S, BinData) of
+        ok    -> transfer(S, Fd, Offset+?CHUNKSIZE, file:read(Fd, ?CHUNKSIZE));
+        Error -> io:format("~p~n", [Error]), transfer_end(S, Fd)
+    end;
 transfer(S, Fd, _Offset, eof) ->
     timer:sleep(5000),
+    transfer_end(S, Fd).
+
+transfer_end(S, Fd) ->
     io:format("~p", [inet:getstat(S)]),
     {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
     koakuma_cfg:set(traffic, koakuma_cfg:get(traffic) + Bytes),
