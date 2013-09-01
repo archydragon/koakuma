@@ -203,7 +203,7 @@ check(xdcc_list, Message) ->
 check(xdcc_stop, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ss][Tt][Oo][Pp]");
 check(xdcc_send, Message) ->
-    seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s([Ss][Ee][Nn][Dd])|([Gg][Ee][Tt])\s");
+    seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s([Ss][Ee][Nn][Dd]|[Gg][Ee][Tt])\s");
 check(xdcc_batch, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Bb][Aa][Tt][Cc][Hh]\s");
 check(xdcc_info, Message) ->
