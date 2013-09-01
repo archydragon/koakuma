@@ -199,7 +199,7 @@ check(version, Message) ->
 check(xdcc_find, Message) ->
     seek(Message, "\s:[@!]find\s");
 check(xdcc_list, Message) ->
-    seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ll][Ii][Ss][Tt]");
+    seek(Message, "\sPRIVMSG\s([^#].*:[Xx][Dd][Cc][Cc]\s|#.*!)[Ll][Ii][Ss][Tt]");
 check(xdcc_stop, Message) ->
     seek(Message, "\sPRIVMSG\s[^#].*:[Xx][Dd][Cc][Cc]\s[Ss][Tt][Oo][Pp]");
 check(xdcc_send, Message) ->
