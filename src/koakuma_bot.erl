@@ -20,7 +20,7 @@
 %% Spawnable unction Exports
 %% ------------------------------------------------------------------
 
--export([files_update/1, notice/2, send_file/3, send_files_list/3]).
+-export([files_update/1, notice/2, send_file/3, send_files_list/3, transfer_timeout/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -368,9 +368,12 @@ transfer_init(Target, Dir, [File]) ->
     Reply = io_lib:format("PRIVMSG ~s :\001DCC SEND \"~s\" ~B ~B ~B\001",
         [Target, File#file.name, Ip, Port, File#file.size]),
     reply(Reply),
+    % Timeout after 5 minutes DCC transfer not started
+    {ok, TRef} = timer:apply_after(300000, ?MODULE, transfer_timeout, [self(), SS]),
     F = [Dir, $/, File#file.name],
     case gen_tcp:accept(SS) of
         {ok, S} ->
+            timer:cancel(TRef),
             ok = gen_tcp:close(SS),
             inet:setopts(S,[{active, once}, {packet, raw}, binary]),
             {ok, Fd} = file:open(F, [read, raw, binary]),
@@ -404,6 +407,11 @@ transfer_end(S, Fd) ->
     koakuma_queue:done(self()),
     file:close(Fd),
     gen_tcp:close(S).
+
+%% DCC query timeout
+transfer_timeout(Pid, SS) ->
+    gen_tcp:close(SS),
+    koakuma_queue:done(Pid).
 
 %% Send XDCC pack information
 send_info(Target, [File]) ->
