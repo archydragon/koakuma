@@ -193,7 +193,7 @@ check(nickserv, Message) ->
 check(altnick, Message) ->
     seek(Message, ":Nickname is already in use");
 check(rejoin, Message) ->
-    seek(Message, ["KICK\s#.*\s", koakuma_cfg:get(nick_now)]);
+    seek(Message, ["KICK\s#.*\s", "\Q", koakuma_cfg:get(nick_now), "\E"]);
 check(version, Message) ->
     seek(Message, ":\001VERSION\001");
 check(xdcc_find, Message) ->
