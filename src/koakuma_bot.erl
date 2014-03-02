@@ -142,7 +142,7 @@ run(version, Message, match) ->
 % XDCC pack findinf mechanism (not implemented yet)
 run(xdcc_find, Message, match) ->
     From = from(Message),
-    Query = trim(lists:last(string:tokens(Message, " "))),
+    Query = trim(lists:last(re:split(Message, "find ", [{return, list}]))),
     Reply = case length(Query) >= 4 of
         true  -> find_file(Query, koakuma_cfg:get(allow_find));
         false -> ""
