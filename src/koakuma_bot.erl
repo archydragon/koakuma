@@ -4,7 +4,7 @@
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
--define(VERSION, "0.7a").
+-define(VERSION, "0.8a").
 -define(CHUNKSIZE, 16384).
 
 -include_lib("kernel/include/file.hrl").
@@ -40,9 +40,8 @@ start_link() ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init(Args) ->
-    spawn_link(fun() -> connect() end),
-    {ok, Args}.
+init(_Args) ->
+    {ok, connect()}.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -53,11 +52,23 @@ handle_cast({send_raw, Message}, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({tcp, State, Data}, State) ->
+    io:format("> [~w] ~s", [State, Data]),
+    parse(Data),
+    {noreply, State};
+handle_info(quit, State) ->
+    reply("QUIT :Gone."),
+    gen_tcp:close(State),
+    {stop, abnormal, State};
+handle_info(is_alive, State) ->
+    % "ping" IRC connection every 10 seconds
+    reply("ALIVE"),
+    erlang:send_after(10000, ?MODULE, is_alive),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
-    quit(),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -79,22 +90,8 @@ connect() ->
     koakuma_queue:set_limit(koakuma_cfg:get(dcc_concurrent_sends)),
     ok = reply(["NICK ", koakuma_cfg:get(nick)]),
     ok = reply(["USER ", koakuma_cfg:get(user), " 0 * :", koakuma_cfg:get(real_name)]),
-    listen(S),
-    timer:sleep(koakuma_cfg:get(reconnect_interval) * 1000),
-    connect(),
-    ok.
-
-%% Listener for IRC server replies
-listen(Socket) ->
-    receive
-        {tcp, Socket, Data} ->
-            io:format("> [~w] ~s", [Socket, Data]),
-            parse(Data),
-            listen(Socket);
-        quit ->
-            quit(),
-            gen_tcp:close(Socket)
-        end.
+    erlang:send_after(10000, ?MODULE, is_alive),
+    S.
 
 %% Parser of IRC server replies
 parse(Message) ->
@@ -227,9 +224,6 @@ notice(Target, [M | Left]) ->
     end;
 notice(_Target, []) ->
     ok.
-
-quit() ->
-    reply("QUIT :Gone.").
 
 %% Identify at NickServ
 identify([]) ->
