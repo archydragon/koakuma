@@ -53,20 +53,19 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({tcp, State, Data}, State) ->
-    io:format("> [~w] ~s", [State, Data]),
+    LogData = iolist_to_binary(Data),
+    koakuma_log:raw(<<"-> ", LogData/binary>>),
     parse(Data),
     {noreply, State};
-handle_info(quit, State) ->
-    reply("QUIT :Gone."),
-    gen_tcp:close(State),
-    {stop, abnormal, State};
 handle_info(is_alive, State) ->
-    % "ping" IRC connection every 10 seconds
-    reply("ALIVE"),
-    erlang:send_after(10000, ?MODULE, is_alive),
+    % "ping" IRC connection every minute
+    reply("PING 42"),
+    erlang:send_after(60000, ?SERVER, is_alive),
     {noreply, State};
 handle_info(_Info, State) ->
-    {noreply, State}.
+    reply("QUIT :Gone."),
+    gen_tcp:close(State),
+    {stop, abnormal, State}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -85,12 +84,13 @@ connect() ->
     koakuma_cfg:set(nick_now, koakuma_cfg:get(nick)),
     list_links = ets:new(list_links, [set, named_table]),
     spawn_link(?MODULE, files_update, [koakuma_cfg:get(data_dir)]),
+    koakuma_log:init(),
     {ok, S} = gen_tcp:connect(koakuma_cfg:get(server), koakuma_cfg:get(port), [{packet, line}]),
     koakuma_cfg:set(sock, S),
     koakuma_queue:set_limit(koakuma_cfg:get(dcc_concurrent_sends)),
     ok = reply(["NICK ", koakuma_cfg:get(nick)]),
     ok = reply(["USER ", koakuma_cfg:get(user), " 0 * :", koakuma_cfg:get(real_name)]),
-    erlang:send_after(10000, ?MODULE, is_alive),
+    ?SERVER ! is_alive,
     S.
 
 %% Parser of IRC server replies
@@ -214,7 +214,8 @@ seek(Text, Pattern) ->
 
 reply(Data) ->
     Send = [Data, "\r\n"],
-    io:format("< [~w] ~s~n", [koakuma_cfg:get(sock), Data]),
+    LogData = iolist_to_binary(Data),
+    koakuma_log:raw(<<"<- ", LogData/binary>>),
     gen_tcp:send(koakuma_cfg:get(sock), Send).
 
 notice(Target, [M | Left]) ->
@@ -362,6 +363,8 @@ transfer_init(Target, Dir, [File]) ->
     Reply = io_lib:format("PRIVMSG ~s :\001DCC SEND \"~s\" ~B ~B ~B\001",
         [Target, File#file.name, Ip, Port, File#file.size]),
     reply(Reply),
+    LogEntry = io_lib:format("DCC start: socket ~p, file \"~s\"", [SS, File#file.name]),
+    koakuma_log:xdcc(iolist_to_binary(LogEntry)),
     % Timeout after 5 minutes DCC transfer not started
     {ok, TRef} = timer:apply_after(300000, ?MODULE, transfer_timeout, [self(), SS]),
     F = [Dir, $/, File#file.name],
@@ -380,7 +383,7 @@ transfer_init(Target, Dir, [File]) ->
                     ok
             end;
         _Other ->
-            io:format("Socket closed.~n"),
+            koakuma_log:xdcc(iolist_to_binary(io_lib:format("Socket ~p closed", [SS]))),
             ok
     end.
 
@@ -388,14 +391,14 @@ transfer_init(Target, Dir, [File]) ->
 transfer(S, Fd, Offset, {ok, BinData}) ->
     case gen_tcp:send(S, BinData) of
         ok    -> transfer(S, Fd, Offset+?CHUNKSIZE, file:read(Fd, ?CHUNKSIZE));
-        Error -> io:format("~p~n", [Error]), transfer_end(S, Fd)
+        Error -> koakuma_log:xdcc(iolist_to_binary(io_lib:format("Error: ~p", [Error]))), transfer_end(S, Fd)
     end;
 transfer(S, Fd, _Offset, eof) ->
     timer:sleep(5000),
     transfer_end(S, Fd).
 
 transfer_end(S, Fd) ->
-    io:format("~p", [inet:getstat(S)]),
+    koakuma_log:xdcc(iolist_to_binary(io:format("Transfer finished: ~p", [inet:getstat(S)]))),
     {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
     koakuma_cfg:set(traffic, koakuma_cfg:get(traffic) + Bytes),
     koakuma_queue:done(self()),
@@ -404,6 +407,7 @@ transfer_end(S, Fd) ->
 
 %% DCC query timeout
 transfer_timeout(Pid, SS) ->
+    koakuma_log:xdcc(iolist_to_binary(io_lib:format("Socket ~p timed out", [SS]))),
     gen_tcp:close(SS),
     koakuma_queue:done(Pid).
 
