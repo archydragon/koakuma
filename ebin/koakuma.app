@@ -1,6 +1,6 @@
 {application,koakuma,
              [{description,[]},
-              {vsn,"0.7a"},
+              {vsn,"0.9a"},
               {registered,[]},
               {applications,[kernel,stdlib]},
               {mod,{koakuma_app,[]}},
