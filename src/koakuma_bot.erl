@@ -398,7 +398,7 @@ transfer(S, Fd, _Offset, eof) ->
     transfer_end(S, Fd).
 
 transfer_end(S, Fd) ->
-    koakuma_log:xdcc(iolist_to_binary(io:format("Transfer finished: ~p", [inet:getstat(S)]))),
+    koakuma_log:xdcc(iolist_to_binary(io_lib:format("Transfer finished: ~p", [inet:getstat(S)]))),
     {ok, [{send_oct, Bytes}]} = inet:getstat(S, [send_oct]),
     koakuma_cfg:set(traffic, koakuma_cfg:get(traffic) + Bytes),
     koakuma_queue:done(self()),
@@ -431,17 +431,18 @@ send_info(Target, []) ->
 
 %% Find file among the ones we have
 find_file(Query, true) ->
-    io:format("~p~n", [Query]),
+    % io:format("~p~n", [Query]),
     Names = koakuma_dets:files(),
-    find_substr(Query, Names);
+    find_substr(re:replace(Query, <<"\s">>, <<".*">>, [global, {return, binary}]), Names);
 find_file(_Q, false) ->
     "".
 
 find_substr(_S, []) ->
     "";
 find_substr(S, [Current | Tail]) ->
-    case string:str(Current, S) of
-        0 -> find_substr(S, Tail);
+    case re:run(string:to_lower(Current), downcase(S)) of
+        nomatch ->
+            find_substr(S, Tail);
         _ ->
             [Found] = koakuma_dets:file(Current),
             Pack = Found#file.pack,
@@ -526,6 +527,11 @@ ranges(Data) ->
         end
         || P <- string:tokens(Filtered, ",")
     ]).
+
+%% Downcase binary string
+-spec downcase(binary()) -> binary().
+downcase(BinStr) ->
+    iolist_to_binary(string:to_lower(binary_to_list(BinStr))).
 
 %% -------------------------------------
 %% API implementations
