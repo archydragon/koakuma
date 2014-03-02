@@ -433,14 +433,14 @@ send_info(Target, []) ->
 find_file(Query, true) ->
     % io:format("~p~n", [Query]),
     Names = koakuma_dets:files(),
-    find_substr(re:replace(Query, <<"\s">>, <<".*">>, [global, {return, binary}]), Names);
+    find_substr(my_escape(string:to_lower(Query)), Names);
 find_file(_Q, false) ->
     "".
 
 find_substr(_S, []) ->
     "";
 find_substr(S, [Current | Tail]) ->
-    case re:run(string:to_lower(Current), downcase(S)) of
+    case re:run(string:to_lower(Current), S) of
         nomatch ->
             find_substr(S, Tail);
         _ ->
@@ -528,10 +528,11 @@ ranges(Data) ->
         || P <- string:tokens(Filtered, ",")
     ]).
 
-%% Downcase binary string
--spec downcase(binary()) -> binary().
-downcase(BinStr) ->
-    iolist_to_binary(string:to_lower(binary_to_list(BinStr))).
+%% Escape binary string for search
+-spec my_escape(binary()) -> binary().
+my_escape(Str) ->
+    R = re:replace(Str, <<"\s">>, <<"\\\\E.*\\\\Q">>, [global, {return, binary}]),
+    <<"\\Q", R/binary, "\\E">>.
 
 %% -------------------------------------
 %% API implementations
