@@ -10,6 +10,11 @@
 -include_lib("kernel/include/file.hrl").
 -include_lib("koakuma.hrl").
 
+-record(state, {
+    socket      = [],
+    alive_timer = []
+}).
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -41,7 +46,7 @@ start_link() ->
 %% ------------------------------------------------------------------
 
 init(_Args) ->
-    {ok, connect()}.
+    {ok, #state{socket=connect()}}.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -262,7 +267,8 @@ files_check({ok, _Info}, _Mtime) ->
     ok.
 
 files_add_new(Directory, []) ->
-    {ok, Files} = file:list_dir(Directory),
+    {ok, FilesUnsorted} = file:list_dir(Directory),
+    Files = lists:sort(FilesUnsorted),
     fileinfo(Files, 1, [], Directory);
 files_add_new(Directory, _Files) ->
     FilesOld = koakuma_dets:files(),
