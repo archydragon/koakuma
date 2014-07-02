@@ -267,7 +267,8 @@ files_add_new(Directory, []) ->
     fileinfo(Files, 1, [], Directory);
 files_add_new(Directory, _Files) ->
     FilesOld = koakuma_dets:files(),
-    {ok, FilesAll} = file:list_dir(Directory),
+    {ok, FilesAllUnsorted} = file:list_dir(Directory),
+    FilesAll = lists:sort(FilesAllUnsorted),
     LastPack = list_max(koakuma_dets:packs()),
     fileinfo(FilesAll -- FilesOld, LastPack + 1, [], Directory).
 
