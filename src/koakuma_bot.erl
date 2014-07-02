@@ -10,11 +10,6 @@
 -include_lib("kernel/include/file.hrl").
 -include_lib("koakuma.hrl").
 
--record(state, {
-    socket      = [],
-    alive_timer = []
-}).
-
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -46,7 +41,7 @@ start_link() ->
 %% ------------------------------------------------------------------
 
 init(_Args) ->
-    {ok, #state{socket=connect()}}.
+    {ok, connect()}.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
