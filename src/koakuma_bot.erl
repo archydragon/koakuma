@@ -165,7 +165,10 @@ run(xdcc_stop, Message, match) ->
 run(xdcc_send, Message, match) ->
     From = from(Message),
     Pack = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global, {return, list}]),
-    spawn_link(?MODULE, send_file, [From, koakuma_cfg:get(data_dir), koakuma_dets:pack(list_to_integer(Pack))]);
+    case Pack of
+        [] -> notice(From, [<<"You've requested something that isn't valid pack number, type \002xdcc list\002 to get available ones.">>]);
+        _  -> spawn_link(?MODULE, send_file, [From, koakuma_cfg:get(data_dir), koakuma_dets:pack(list_to_integer(Pack))])
+    end;
 % Send multiple packs to user
 run(xdcc_batch, Message, match) ->
     From = from(Message),
@@ -175,7 +178,10 @@ run(xdcc_batch, Message, match) ->
 run(xdcc_info, Message, match) ->
     From = from(Message),
     Pack = re:replace(lists:last(string:tokens(Message, " ")), "[^0-9]", "", [global, {return, list}]),
-    send_info(From, koakuma_dets:pack(list_to_integer(Pack)));
+    case Pack of
+        [] -> notice(From, [<<"You've requested something that isn't valid pack number, type \002xdcc list\002 to get available ones.">>]);
+        _  -> send_info(From, koakuma_dets:pack(list_to_integer(Pack)))
+    end;
 % Catch-all
 run(_Action, _Message, _Nomatch) ->
     ok.
