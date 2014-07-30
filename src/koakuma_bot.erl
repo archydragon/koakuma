@@ -318,7 +318,7 @@ reply_list_fun([], Acc)->
     [io_lib:format("\002*\002 To request details, type \002/msg ~s xdcc info X\002", [koakuma_cfg:get(nick_now)])] ++
     Acc ++ [io_lib:format("Total offered: ~s  Total transferred: ~s", [TotalSize, Transferred])];
 reply_list_fun([[Item] | Left], Acc) ->
-    Formatted = io_lib:format("\002~5s\002 ~4s  ~9s  ~s",
+    Formatted = io_lib:format("\002~5s\002 ~4s  ~10s  ~s",
         [
             [$#, integer_to_list(Item#file.pack)],
             [$x, integer_to_list(Item#file.gets)],
