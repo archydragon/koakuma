@@ -159,8 +159,10 @@ run(xdcc_list, Message, match) ->
 % Stop list sending
 run(xdcc_stop, Message, match) ->
     From = from(Message),
-    [{From, Pid}] = ets:lookup(list_links, From),
-    Pid ! stop;
+    case ets:lookup(list_links, From) of
+        [{From, Pid}] -> Pid ! stop;
+        _Else         -> ok
+    end;
 % XDCC pack sending to user
 run(xdcc_send, Message, match) ->
     From = from(Message),
